@@ -8,8 +8,10 @@ INBOX_DIR="${INBOX_DIR:-$ROOT_DIR/docs/inbox}"
 
 mkdir -p "$INBOX_DIR" "$INBOX_DIR/_processed"
 
-# If the user is editing/has local changes, do nothing. This prevents rebase/push surprises.
-if [ -n "$(git status --porcelain)" ]; then
+# If the user is editing/has local changes (outside inbox), do nothing.
+# We allow untracked/changed files under docs/inbox because that's the input.
+dirty_other="$(git status --porcelain | rg -v '^(\\?\\?|[ MARCUD][ MARCUD])\\s+docs/inbox/' || true)"
+if [ -n "$dirty_other" ]; then
   exit 0
 fi
 
@@ -17,7 +19,11 @@ fi
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 git fetch --prune origin >/dev/null 2>&1 || true
 if git show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
-  git rebase "origin/$BRANCH" >/dev/null 2>&1 || exit 0
+  # If rebase fails, abort to avoid leaving the repo stuck in a rebase state.
+  if ! git rebase "origin/$BRANCH" >/dev/null 2>&1; then
+    git rebase --abort >/dev/null 2>&1 || true
+    exit 0
+  fi
 fi
 
 # 1) Ingest new md files (if none, exits 0 and does nothing)
