@@ -71,7 +71,13 @@ function computeFolderInfo(
       defaultProcessedContent({
         slug: joinSegments(folder, "index") as FullSlug,
         frontmatter: {
-          title: `${i18n(locale).pages.folderContent.folder}: ${folder}`,
+          // Blog UX: keep year/month folder structure as "data", but avoid showing
+          // path-like titles ("폴더: posts/2026/02") to readers.
+          // Any folder page under posts/* gets a human title.
+          title:
+            folder === "posts" || folder.startsWith("posts/")
+              ? "전체 글"
+              : `${i18n(locale).pages.folderContent.folder}: ${folder}`,
           tags: [],
         },
       }),
