@@ -2,5 +2,11 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm quartz build -d docs",
   "outputDirectory": "public",
-  "cleanUrls": true
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/posts/:year/:month/:slug",
+      "destination": "/posts/:year/:month/:slug.html"
+    }
+  ]
 }
