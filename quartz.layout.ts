@@ -38,7 +38,23 @@ export const defaultContentPageLayout: PageLayout = {
         { Component: Component.ReaderMode() },
       ],
     }),
-    Component.Explorer(),
+    Component.Explorer({
+      // Keep storage structure (posts/YYYY/MM/...) but hide it from navigation.
+      filterFn: (node) => {
+        const slug = String(node.slug ?? "")
+        if (slug.startsWith("posts/")) {
+          const depth = slug.split("/").filter(Boolean).length
+          // keep only `posts/index`
+          return depth <= 2
+        }
+        return true
+      },
+      mapFn: (node) => {
+        const slug = String(node.slug ?? "")
+        if (slug === "posts/index") node.displayName = "전체 글"
+        if (slug === "index") node.displayName = "Home"
+      },
+    }),
   ],
   right: [
     Component.Graph(),
@@ -62,7 +78,21 @@ export const defaultListPageLayout: PageLayout = {
         { Component: Component.Darkmode() },
       ],
     }),
-    Component.Explorer(),
+    Component.Explorer({
+      filterFn: (node) => {
+        const slug = String(node.slug ?? "")
+        if (slug.startsWith("posts/")) {
+          const depth = slug.split("/").filter(Boolean).length
+          return depth <= 2
+        }
+        return true
+      },
+      mapFn: (node) => {
+        const slug = String(node.slug ?? "")
+        if (slug === "posts/index") node.displayName = "전체 글"
+        if (slug === "index") node.displayName = "Home"
+      },
+    }),
   ],
   right: [],
 }
