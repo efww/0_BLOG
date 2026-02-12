@@ -1,7 +1,7 @@
 import { QuartzComponent, QuartzComponentConstructor, QuartzComponentProps } from "../types"
 
 import style from "../styles/listPage.scss"
-import { PageList, SortFn } from "../PageList"
+import { PageList, SortFn, byDateAndAlphabetical } from "../PageList"
 import { Root } from "hast"
 import { htmlToJsx } from "../../util/jsx"
 import { i18n } from "../../i18n"
@@ -36,63 +36,87 @@ export default ((opts?: Partial<FolderContentOptions>) => {
       return null
     }
 
-    const allPagesInFolder: QuartzPluginData[] =
-      folder.children
-        .map((node) => {
-          // regular file, proceed
-          if (node.data) {
-            return node.data
+    const isPostsRoot = fileData.slug === ("posts/index" as any)
+
+    const collectDescendantPages = (node: any, acc: QuartzPluginData[]) => {
+      for (const child of node.children ?? []) {
+        if (child?.data?.slug && typeof child.data.slug === "string") {
+          // exclude synthetic index slugs if any were present in content
+          if (!child.data.slug.endsWith("/index")) {
+            acc.push(child.data)
           }
+        }
+        if (child?.isFolder) {
+          collectDescendantPages(child, acc)
+        }
+      }
+    }
 
-          if (node.isFolder && options.showSubfolders) {
-            // folders that dont have data need synthetic files
-            const getMostRecentDates = (): QuartzPluginData["dates"] => {
-              let maybeDates: QuartzPluginData["dates"] | undefined = undefined
-              for (const child of node.children) {
-                if (child.data?.dates) {
-                  // compare all dates and assign to maybeDates if its more recent or its not set
-                  if (!maybeDates) {
-                    maybeDates = { ...child.data.dates }
-                  } else {
-                    if (child.data.dates.created > maybeDates.created) {
-                      maybeDates.created = child.data.dates.created
-                    }
+    let allPagesInFolder: QuartzPluginData[] = []
+    if (isPostsRoot) {
+      // Blog UX: even if files are stored under posts/YYYY/MM/, the posts root should
+      // list ALL posts in chronological order (not folder navigation).
+      collectDescendantPages(folder, allPagesInFolder)
+    } else {
+      allPagesInFolder =
+        folder.children
+          .map((node) => {
+            // regular file, proceed
+            if (node.data) {
+              return node.data
+            }
 
-                    if (child.data.dates.modified > maybeDates.modified) {
-                      maybeDates.modified = child.data.dates.modified
-                    }
+            if (node.isFolder && options.showSubfolders) {
+              // folders that dont have data need synthetic files
+              const getMostRecentDates = (): QuartzPluginData["dates"] => {
+                let maybeDates: QuartzPluginData["dates"] | undefined = undefined
+                for (const child of node.children) {
+                  if (child.data?.dates) {
+                    // compare all dates and assign to maybeDates if its more recent or its not set
+                    if (!maybeDates) {
+                      maybeDates = { ...child.data.dates }
+                    } else {
+                      if (child.data.dates.created > maybeDates.created) {
+                        maybeDates.created = child.data.dates.created
+                      }
 
-                    if (child.data.dates.published > maybeDates.published) {
-                      maybeDates.published = child.data.dates.published
+                      if (child.data.dates.modified > maybeDates.modified) {
+                        maybeDates.modified = child.data.dates.modified
+                      }
+
+                      if (child.data.dates.published > maybeDates.published) {
+                        maybeDates.published = child.data.dates.published
+                      }
                     }
                   }
                 }
+                return (
+                  maybeDates ?? {
+                    created: new Date(),
+                    modified: new Date(),
+                    published: new Date(),
+                  }
+                )
               }
-              return (
-                maybeDates ?? {
-                  created: new Date(),
-                  modified: new Date(),
-                  published: new Date(),
-                }
-              )
-            }
 
-            return {
-              slug: node.slug,
-              dates: getMostRecentDates(),
-              frontmatter: {
-                title: node.displayName,
-                tags: [],
-              },
+              return {
+                slug: node.slug,
+                dates: getMostRecentDates(),
+                frontmatter: {
+                  title: node.displayName,
+                  tags: [],
+                },
+              }
             }
-          }
-        })
-        .filter((page) => page !== undefined) ?? []
+          })
+          .filter((page) => page !== undefined) ?? []
+    }
     const cssClasses: string[] = fileData.frontmatter?.cssclasses ?? []
     const classes = cssClasses.join(" ")
     const listProps = {
       ...props,
-      sort: options.sort,
+      // For /posts, prefer pure date sort (no "folders first") to get a simple feed.
+      sort: isPostsRoot ? byDateAndAlphabetical(cfg) : options.sort,
       allFiles: allPagesInFolder,
     }
 
