@@ -18,7 +18,8 @@ const config: QuartzConfig = {
     },
     locale: "ko-KR",
     baseUrl: "efwwww.pages.dev",
-    ignorePatterns: ["private", "templates", ".obsidian"],
+    // Keep local automation folders out of the published site.
+    ignorePatterns: ["private", "templates", ".obsidian", "inbox", "_processed"],
     defaultDateType: "modified",
     theme: {
       fontOrigin: "googleFonts",
