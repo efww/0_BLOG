@@ -1,6 +1,6 @@
 {
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm quartz build -d docs",
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "cleanUrls": true
 }
-
