@@ -10,7 +10,7 @@ mkdir -p "$INBOX_DIR" "$INBOX_DIR/_processed"
 
 # If the user is editing/has local changes (outside inbox), do nothing.
 # We allow untracked/changed files under docs/inbox because that's the input.
-dirty_other="$(git status --porcelain | rg -v '^(\\?\\?|[ MARCUD][ MARCUD])\\s+docs/inbox/' || true)"
+dirty_other="$(git status --porcelain | rg -v '^..[[:space:]]+docs/inbox/' || true)"
 if [ -n "$dirty_other" ]; then
   exit 0
 fi
