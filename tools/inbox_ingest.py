@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import os
 import re
 import shutil
@@ -22,15 +23,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-INBOX_DIR = ROOT / "docs" / "inbox"
-PROCESSED_DIR = INBOX_DIR / "_processed"
+DEFAULT_INBOX_DIR = ROOT / "docs" / "inbox"
 POSTS_DIR = ROOT / "docs" / "posts"
 
 
 _PUA_BLOCK_RE = re.compile(r".*?", flags=re.DOTALL)
 _FRONT_MATTER_RE = re.compile(r"\A---\s*\n.*?\n---\s*\n", flags=re.DOTALL)
 _DATE_LINE_RE = re.compile(r"(?m)^\s*date\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*$")
-_TITLE_LINE_RE = re.compile(r'(?m)^\s*title\s*:\s*("?)(.*?)\\1\s*$')
+# YAML front matter title line. Supports quoted or unquoted titles.
+_TITLE_LINE_RE = re.compile(r'(?m)^\s*title\s*:\s*("?)(.*?)\1\s*$')
 _H1_RE = re.compile(r"(?m)^\s*#\s+(.+?)\s*$")
 _FILENAME_DATE1 = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
 _FILENAME_DATE2 = re.compile(r"([0-9]{4})([0-9]{2})([0-9]{2})")
@@ -41,9 +42,24 @@ def _today() -> dt.date:
 
 
 def _strip_pua_blocks(text: str) -> str:
-    # Removes markers like:
-    #   cite..., entity..., image_group...
-    out = _PUA_BLOCK_RE.sub("", text)
+    # These "..." blocks are private-use markers coming from upstream tooling.
+    # - entity blocks often include the *actual noun* (company/person/etc). We preserve that.
+    # - cite/image_group blocks are removed (they are not valid Markdown).
+    def repl(m: re.Match) -> str:
+        block = m.group(0)
+        # Example: entity["people","이익주","korean historian"]
+        if block.startswith("entity") and block.endswith(""):
+            payload = block[len("entity") : -len("")]
+            try:
+                data = json.loads(payload)
+            except Exception:
+                return ""
+            if isinstance(data, list) and len(data) >= 2 and isinstance(data[1], str):
+                return data[1]
+            return ""
+        return ""
+
+    out = _PUA_BLOCK_RE.sub(repl, text)
     # Collapse excessive blank lines created by removals.
     out = re.sub(r"\n{4,}", "\n\n\n", out)
     return out.strip() + "\n"
@@ -129,18 +145,35 @@ def _ensure_front_matter(text: str, title: str, d: dt.date) -> str:
     return fm + body
 
 
-def ingest_one(path: Path, archive: bool, dry_run: bool) -> Path | None:
+def _sort_key_for_inbox(path: Path) -> tuple[int, str]:
+    # If filename looks like "... (12).md", sort by that number.
+    m = re.search(r"\((\d+)\)\.md$", path.name)
+    if m:
+        return (int(m.group(1)), path.name)
+    return (10**9, path.name)
+
+
+def ingest_one(
+    *,
+    path: Path,
+    processed_dir: Path,
+    archive: bool,
+    keep_source: bool,
+    dry_run: bool,
+    force_date: dt.date | None,
+    force_seq: int | None,
+) -> Path | None:
     if path.suffix.lower() != ".md":
         return None
 
     raw = path.read_text(encoding="utf-8", errors="replace")
     cleaned = _strip_pua_blocks(raw)
-    d = _guess_date(cleaned, path.name)
+    d = force_date or _guess_date(cleaned, path.name)
     title = _guess_title(cleaned, fallback=path.stem)
     cleaned = _ensure_front_matter(cleaned, title=title, d=d)
 
     target_dir = POSTS_DIR / f"{d.year:04d}" / f"{d.month:02d}"
-    seq = _next_seq_for_date(target_dir, d)
+    seq = force_seq if force_seq is not None else _next_seq_for_date(target_dir, d)
     out_name = f"{d.isoformat()}_post-{seq:04d}.md"
     out_path = target_dir / out_name
 
@@ -150,35 +183,72 @@ def ingest_one(path: Path, archive: bool, dry_run: bool) -> Path | None:
     target_dir.mkdir(parents=True, exist_ok=True)
     out_path.write_text(cleaned, encoding="utf-8")
 
-    if archive:
-        archive_dir = PROCESSED_DIR / f"{d.year:04d}" / f"{d.month:02d}"
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(path), str(archive_dir / path.name))
-    else:
-        path.unlink(missing_ok=True)
+    if not keep_source:
+        if archive:
+            archive_dir = processed_dir / f"{d.year:04d}" / f"{d.month:02d}"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(path), str(archive_dir / path.name))
+        else:
+            path.unlink(missing_ok=True)
 
     return out_path
 
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--inbox", default=str(INBOX_DIR))
+    p.add_argument("--inbox", default=str(DEFAULT_INBOX_DIR))
     p.add_argument("--archive", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument(
+        "--keep-source",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="If true, do not move/delete input files (useful for reprocessing).",
+    )
+    p.add_argument(
+        "--force-date",
+        default=None,
+        help="Force output date (YYYY-MM-DD). Useful for reprocessing older batches.",
+    )
+    p.add_argument(
+        "--force-seq-start",
+        type=int,
+        default=None,
+        help="Force deterministic sequence numbers starting at this value (overwrites outputs).",
+    )
     p.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=False)
     args = p.parse_args()
 
     inbox = Path(args.inbox).expanduser().resolve()
+    processed_dir = inbox / "_processed"
     inbox.mkdir(parents=True, exist_ok=True)
-    (inbox / "_processed").mkdir(parents=True, exist_ok=True)
+    processed_dir.mkdir(parents=True, exist_ok=True)
 
-    items = sorted([x for x in inbox.iterdir() if x.is_file() and x.suffix.lower() == ".md"])
+    items = sorted(
+        [x for x in inbox.iterdir() if x.is_file() and x.suffix.lower() == ".md"],
+        key=_sort_key_for_inbox,
+    )
     if not items:
         return 0
 
+    forced_date: dt.date | None = None
+    if args.force_date:
+        forced_date = dt.date.fromisoformat(args.force_date)
+
+    seq = args.force_seq_start
     for f in items:
-        out = ingest_one(f, archive=args.archive, dry_run=args.dry_run)
+        out = ingest_one(
+            path=f,
+            processed_dir=processed_dir,
+            archive=args.archive,
+            keep_source=args.keep_source,
+            dry_run=args.dry_run,
+            force_date=forced_date,
+            force_seq=seq,
+        )
         if out:
             print(f"INGESTED {f.name} -> {out.relative_to(ROOT)}")
+        if seq is not None:
+            seq += 1
     return 0
 
 

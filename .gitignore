@@ -10,3 +10,5 @@ tsconfig.tsbuildinfo
 private/
 .replit
 replit.nix
+docs/inbox/
+!docs/inbox/.gitkeep

@@ -35,7 +35,7 @@ if [ -z "$(git status --porcelain)" ]; then
 fi
 
 # 3) Commit and push.
-git add docs/posts docs/inbox/_processed 2>/dev/null || true
+git add docs/posts 2>/dev/null || true
 
 if git diff --cached --quiet; then
   exit 0
