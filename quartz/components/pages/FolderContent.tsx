@@ -36,7 +36,7 @@ export default ((opts?: Partial<FolderContentOptions>) => {
       return null
     }
 
-    const isPostsRoot = fileData.slug === ("posts/index" as any)
+    const isPostsRoot = fileData.slug === ("posts/index" as any) || fileData.slug === ("index" as any)
 
     const collectDescendantPages = (node: any, acc: QuartzPluginData[]) => {
       for (const child of node.children ?? []) {
@@ -54,9 +54,14 @@ export default ((opts?: Partial<FolderContentOptions>) => {
 
     let allPagesInFolder: QuartzPluginData[] = []
     if (isPostsRoot) {
+      const postsFolderNode =
+        folder.slugSegment === "posts" ? folder : folder.children.find((child) => child.slugSegment === "posts")
+
+      if (postsFolderNode) {
       // Blog UX: even if files are stored under posts/YYYY/MM/, the posts root should
       // list ALL posts in chronological order (not folder navigation).
-      collectDescendantPages(folder, allPagesInFolder)
+        collectDescendantPages(postsFolderNode, allPagesInFolder)
+      }
     } else {
       allPagesInFolder =
         folder.children

@@ -75,7 +75,7 @@ function computeFolderInfo(
           // path-like titles ("폴더: posts/2026/02") to readers.
           // Any folder page under posts/* gets a human title.
           title:
-            folder === "posts" || folder.startsWith("posts/")
+            folder === "" || folder === "posts" || folder.startsWith("posts/")
               ? "전체 글"
               : `${i18n(locale).pages.folderContent.folder}: ${folder}`,
           tags: [],
@@ -87,7 +87,7 @@ function computeFolderInfo(
   // Update with actual content if available
   for (const [tree, file] of content) {
     const slug = stripSlashes(simplifySlug(file.data.slug!)) as SimpleSlug
-    if (folders.has(slug)) {
+    if (folders.has(slug) && file.data.slug !== "index") {
       folderInfo[slug] = [tree, file]
     }
   }
@@ -97,11 +97,11 @@ function computeFolderInfo(
 
 function _getFolders(slug: FullSlug): SimpleSlug[] {
   var folderName = path.dirname(slug ?? "") as SimpleSlug
-  const parentFolderNames = [folderName]
+  const parentFolderNames = [folderName === "." ? ("" as SimpleSlug) : folderName]
 
   while (folderName !== ".") {
     folderName = path.dirname(folderName ?? "") as SimpleSlug
-    parentFolderNames.push(folderName)
+    parentFolderNames.push(folderName === "." ? ("" as SimpleSlug) : folderName)
   }
   return parentFolderNames
 }
@@ -142,7 +142,7 @@ export const FolderPage: QuartzEmitterPlugin<Partial<FolderPageOptions>> = (user
         allFiles.flatMap((data) => {
           return data.slug
             ? _getFolders(data.slug).filter(
-                (folderName) => folderName !== "." && folderName !== "tags",
+                (folderName) => folderName !== "tags",
               )
             : []
         }),
@@ -161,7 +161,7 @@ export const FolderPage: QuartzEmitterPlugin<Partial<FolderPageOptions>> = (user
         if (!changeEvent.file) continue
         const slug = changeEvent.file.data.slug!
         const folders = _getFolders(slug).filter(
-          (folderName) => folderName !== "." && folderName !== "tags",
+          (folderName) => folderName !== "tags",
         )
         folders.forEach((folder) => affectedFolders.add(folder))
       }
